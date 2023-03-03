@@ -6,6 +6,75 @@ This library is a HTTP load generator, similar in function to `wrk` or `ab`. It 
 
 Please see the tests for examples of how to use this library. I also feel the code and interfaces are simple enough that most experienced Golang programmers should need little instruction using it.
 
+### Usage
+
+`makeload` is a library, which you can use by incorporating the library with `go get` and then using the code to drive it. Here is an example from the test suite:
+
+```go 
+package main
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"runtime"
+	"testing"
+	"time"
+
+  "github.com/erikh/go-makeload"
+)
+
+type Server struct{}
+
+func (s *Server) ServeHTTP(rw http.ResponseWriter, req *http.Request) {}
+
+func TestBasic(t *testing.T) {
+	srv := &Server{}
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go http.Serve(l, srv)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // don't annoy the tester.
+	defer cancel()
+
+	u, err := url.Parse("http://" + l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lg := &makeload.LoadGenerator{
+		Concurrency:             uint(runtime.NumCPU() / 2),          // give room for the server to work
+		SimultaneousConnections: uint(runtime.NumCPU() * 1000),       // a very conservative value for modern processors
+		TotalConnections:        uint(runtime.NumCPU() * 1000 * 100), // roughly spoken, 100k conns * cpu count for the battery
+		Ctx:                     ctx,
+		URL:                     u,
+	}
+
+	if err := lg.Spawn(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Stats.Successes+lg.Stats.Failures))
+	t.Log("successes: " + fmt.Sprintf("%d", lg.Stats.Successes))
+	t.Log("failures: " + fmt.Sprintf("%d", lg.Stats.Failures))
+}
+```
+
+Upon running this test with `go test -v`, you would see output like:
+
+```
+=== RUN   TestBasic
+    main_test.go:49: total delivered: 800000
+    main_test.go:50: successes: 798799
+    main_test.go:51: failures: 1201
+--- PASS: TestBasic (38.34s)
+PASS
+```
 
 ### The future
 
