@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-  "github.com/erikh/go-makeload"
+	"github.com/erikh/go-makeload"
 )
 
 type Server struct{}
