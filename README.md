@@ -37,7 +37,8 @@ func TestBasic(t *testing.T) {
 
 	go http.Serve(l, srv)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // don't annoy the tester.
+	// don't annoy the tester, but allow the test to finish for large core counts.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(runtime.NumCPU()*20)*time.Second)
 	defer cancel()
 
 	u, err := url.Parse("http://" + l.Addr().String())
