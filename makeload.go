@@ -32,10 +32,8 @@ type Stats struct {
 	Failures uint
 }
 
-// LoadGenerator is the main load generator struct for managing load
-// generation. One would construct this struct, filling out the proper
-// parameters, and then would run Spawn() on the struct to apply load.
-type LoadGenerator struct {
+// BatteryProperties are the list of properties common to each load generator.
+type BatteryProperties struct {
 	connMutex sync.RWMutex
 	connCount uint
 	connTotal uint
@@ -46,9 +44,6 @@ type LoadGenerator struct {
 	// SimultaneousConnections is the number of connections to maintain open at
 	// any given time.
 	SimultaneousConnections uint
-	// TotalConnections determines when the load generator is done, once it
-	// reaches this value.
-	TotalConnections uint
 	// URL is the url to connect to,
 	URL *url.URL
 	// Ctx is a context which, if canceled, will stop load generation.
@@ -60,72 +55,109 @@ type LoadGenerator struct {
 	Requester
 }
 
+// Benchmarker is the main load generator struct for managing benchmarking.
+// Call Spawn() on the result.
+type Benchmarker struct {
+	Properties *BatteryProperties
+	Time       time.Duration
+}
+
+func NewBenchmarker(properties *BatteryProperties, duration time.Duration) *Benchmarker {
+	return &Benchmarker{Properties: properties, Time: duration}
+}
+
+// Spawn launches the benchmarker. It will return an error if there was an
+// error generating load. It does not error if there were issues making the
+// individual HTTP requests. The Stats struct tracks the count of failures.
+//
+// To cancel load generation, cancel a passed context.
+func (b *Benchmarker) Spawn() error {
+	start := time.Now()
+	return b.Properties.spawn(func(total uint) bool { return start.Add(b.Time).Before(time.Now()) })
+}
+
+// LoadGenerator is the main load generator struct for managing load
+// generation. One would construct this struct, filling out the proper
+// parameters, and then would run Spawn() on the struct to apply load.
+type LoadGenerator struct {
+	Properties       *BatteryProperties
+	TotalConnections uint
+}
+
+func NewLoadGenerator(properties *BatteryProperties, total uint) *LoadGenerator {
+	return &LoadGenerator{Properties: properties, TotalConnections: total}
+}
+
 // Spawn launches the load generator. It will return an error if there was an
 // error generating load. It does not error if there were issues making the
 // individual HTTP requests. The Stats struct tracks the count of failures.
 //
 // To cancel load generation, cancel a passed context.
 func (lg *LoadGenerator) Spawn() error {
-	wg := &sync.WaitGroup{}
-	wg.Add(int(lg.Concurrency))
+	return lg.Properties.spawn(func(total uint) bool { return lg.TotalConnections <= total })
+}
 
-	for i := uint(0); i < lg.Concurrency; i++ {
-		go lg.makeRequests(wg)
+func (p *BatteryProperties) spawn(cancelFunc func(uint) bool) error {
+	wg := &sync.WaitGroup{}
+	wg.Add(int(p.Concurrency))
+
+	for i := uint(0); i < p.Concurrency; i++ {
+		go makeRequests(wg, p, cancelFunc)
 	}
 
 	wg.Wait()
-	return lg.Ctx.Err()
+	return p.Ctx.Err()
 }
 
 // this function performs the actual request delivery. it is run in multiple goroutines.
-func (lg *LoadGenerator) makeRequests(wg *sync.WaitGroup) {
+func makeRequests(wg *sync.WaitGroup, properties *BatteryProperties, cancelFunc func(uint) bool) {
 	defer func() {
 		wg.Done()
 	}()
 
 	for {
 		select {
-		case <-lg.Ctx.Done():
+		case <-properties.Ctx.Done():
 			return
 		default:
 		}
 
-		lg.connMutex.RLock()
-		if lg.SimultaneousConnections <= lg.connCount {
+		properties.connMutex.RLock()
+		if properties.SimultaneousConnections <= properties.connCount {
 			time.Sleep(10 * time.Millisecond) // make this tweakable
 			continue
 		}
 
-		if lg.TotalConnections <= lg.connTotal {
-			lg.connMutex.RUnlock()
+		if cancelFunc(properties.connTotal) {
+			properties.connMutex.RUnlock()
 			return
 		}
-		lg.connMutex.RUnlock()
+		properties.connMutex.RUnlock()
 
-		lg.connMutex.Lock()
-		lg.connCount++
-		lg.connTotal++
-		lg.connMutex.Unlock()
+		properties.connMutex.Lock()
+		properties.connCount++
+		properties.connTotal++
+		properties.connMutex.Unlock()
 
-		err := lg.Deliver(lg.URL)
+		err := properties.Deliver(properties.URL)
 
-		lg.connMutex.Lock()
-		lg.connCount--
-		lg.connMutex.Unlock()
+		properties.connMutex.Lock()
+		properties.connCount--
+		properties.connMutex.Unlock()
 
-		lg.Stats.mutex.Lock()
+		properties.Stats.mutex.Lock()
 		if err != nil {
-			lg.Stats.Failures++
+			properties.Stats.Failures++
 		} else {
-			lg.Stats.Successes++
+			properties.Stats.Successes++
 		}
-		lg.Stats.mutex.Unlock()
+		properties.Stats.mutex.Unlock()
 	}
 }
 
 // Deliver satisfies the Requester interface and encompasses basic delivery of
 // a HTTP GET request.
-func (lg *LoadGenerator) Deliver(u *url.URL) error {
+func (p *BatteryProperties) Deliver(u *url.URL) error {
 	resp, err := http.Get(u.String())
 	if err != nil {
 		return err

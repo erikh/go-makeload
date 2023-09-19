@@ -43,19 +43,21 @@ func TestBasic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lg := &LoadGenerator{
-		Concurrency:             uint(runtime.NumCPU() / 2),      // give room for the server to work
-		SimultaneousConnections: uint(runtime.NumCPU() * 1000),   // a very conservative value for modern processors
-		TotalConnections:        uint(runtime.NumCPU() * 100000), // roughly spoken, 100k conns * cpu count for the battery
-		Ctx:                     ctx,
-		URL:                     u,
-	}
+	lg := NewLoadGenerator(
+		&BatteryProperties{
+			Concurrency:             uint(runtime.NumCPU() / 2),    // give room for the server to work
+			SimultaneousConnections: uint(runtime.NumCPU() * 1000), // a very conservative value for modern processors
+			Ctx:                     ctx,
+			URL:                     u,
+		},
+		uint(runtime.NumCPU()*100000), // roughly spoken, 100k conns * cpu count for the battery
+	)
 
 	if err := lg.Spawn(); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Stats.Successes+lg.Stats.Failures))
-	t.Log("successes: " + fmt.Sprintf("%d", lg.Stats.Successes))
-	t.Log("failures: " + fmt.Sprintf("%d", lg.Stats.Failures))
+	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Properties.Stats.Successes+lg.Properties.Stats.Failures))
+	t.Log("successes: " + fmt.Sprintf("%d", lg.Properties.Stats.Successes))
+	t.Log("failures: " + fmt.Sprintf("%d", lg.Properties.Stats.Failures))
 }
