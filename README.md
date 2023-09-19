@@ -70,23 +70,24 @@ func TestLoadGenerator(t *testing.T) {
 	defer l.Close()
 
 	lg := NewLoadGenerator(
-		&BatteryProperties{
-			Concurrency:             uint(runtime.NumCPU() / 2),    // give room for the server to work
-			SimultaneousConnections: uint(runtime.NumCPU() * 1000), // a very conservative value for modern processors
-			Ctx:                     ctx,
-			URL:                     u,
-		},
-		uint(runtime.NumCPU()*100000), // roughly spoken, 100k conns * cpu count for the battery
+		NewBatteryProperties(
+			ctx,
+			uint64(runtime.NumCPU()/2),    // give room for the server to work
+			uint64(runtime.NumCPU()*1000), // a very conservative value for modern processors
+			u,
+		),
+		uint64(runtime.NumCPU()*100000), // roughly spoken, 100k conns * cpu count for the battery
 	)
 
 	if err := lg.Spawn(); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Properties.Stats.Successes+lg.Properties.Stats.Failures))
-	t.Log("successes: " + fmt.Sprintf("%d", lg.Properties.Stats.Successes))
-	t.Log("failures: " + fmt.Sprintf("%d", lg.Properties.Stats.Failures))
+	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Properties.Stats().Successes()+lg.Properties.Stats().Failures()))
+	t.Log("successes: " + fmt.Sprintf("%d", lg.Properties.Stats().Successes()))
+	t.Log("failures: " + fmt.Sprintf("%d", lg.Properties.Stats().Failures()))
 }
+
 ```
 
 Upon running this test with `go test -v`, you would see output like:
