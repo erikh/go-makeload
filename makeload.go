@@ -192,6 +192,8 @@ func (p *BatteryProperties) Deliver(u *url.URL) error {
 		return err
 	}
 
+	resp.Body.Close()
+
 	if resp.StatusCode != 200 {
 		return errors.New("Non-200 status code")
 	}
