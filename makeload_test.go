@@ -50,22 +50,22 @@ func TestLoadGenerator(t *testing.T) {
 	defer l.Close()
 
 	lg := NewLoadGenerator(
-		&BatteryProperties{
-			Concurrency:             uint(runtime.NumCPU() / 2),    // give room for the server to work
-			SimultaneousConnections: uint(runtime.NumCPU() * 1000), // a very conservative value for modern processors
-			Ctx:                     ctx,
-			URL:                     u,
-		},
-		uint(runtime.NumCPU()*100000), // roughly spoken, 100k conns * cpu count for the battery
+		NewBatteryProperties(
+			ctx,
+			uint64(runtime.NumCPU()/2),    // give room for the server to work
+			uint64(runtime.NumCPU()*1000), // a very conservative value for modern processors
+			u,
+		),
+		uint64(runtime.NumCPU()*100000), // roughly spoken, 100k conns * cpu count for the battery
 	)
 
 	if err := lg.Spawn(); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Properties.Stats.Successes+lg.Properties.Stats.Failures))
-	t.Log("successes: " + fmt.Sprintf("%d", lg.Properties.Stats.Successes))
-	t.Log("failures: " + fmt.Sprintf("%d", lg.Properties.Stats.Failures))
+	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Properties.Stats().Successes()+lg.Properties.Stats().Failures()))
+	t.Log("successes: " + fmt.Sprintf("%d", lg.Properties.Stats().Successes()))
+	t.Log("failures: " + fmt.Sprintf("%d", lg.Properties.Stats().Failures()))
 }
 
 func TestBenchmarker(t *testing.T) {
@@ -82,12 +82,12 @@ func TestBenchmarker(t *testing.T) {
 	defer l.Close()
 
 	lg := NewBenchmarker(
-		&BatteryProperties{
-			Concurrency:             uint(runtime.NumCPU() / 2),    // give room for the server to work
-			SimultaneousConnections: uint(runtime.NumCPU() * 1000), // a very conservative value for modern processors
-			Ctx:                     ctx,
-			URL:                     u,
-		},
+		NewBatteryProperties(
+			ctx,
+			uint64(runtime.NumCPU()/2),    // give room for the server to work
+			uint64(runtime.NumCPU()*1000), // a very conservative value for modern processors
+			u,
+		),
 		time.Duration(seconds)*time.Second, // roughly spoken, 100k conns * cpu count for the battery
 	)
 
@@ -95,8 +95,8 @@ func TestBenchmarker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Properties.Stats.Successes+lg.Properties.Stats.Failures))
-	t.Log("successes: " + fmt.Sprintf("%d", lg.Properties.Stats.Successes))
-	t.Log("failures: " + fmt.Sprintf("%d", lg.Properties.Stats.Failures))
-	t.Log("requests/sec: " + fmt.Sprintf("%f", float64(lg.Properties.Stats.Successes)/float64(seconds)))
+	t.Log("total delivered: " + fmt.Sprintf("%d", lg.Properties.Stats().Successes()+lg.Properties.Stats().Failures()))
+	t.Log("successes: " + fmt.Sprintf("%d", lg.Properties.Stats().Successes()))
+	t.Log("failures: " + fmt.Sprintf("%d", lg.Properties.Stats().Failures()))
+	t.Log("requests/sec: " + fmt.Sprintf("%f", float64(lg.Properties.Stats().Successes())/float64(seconds)))
 }
