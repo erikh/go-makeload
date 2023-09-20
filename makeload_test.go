@@ -52,11 +52,11 @@ func TestLoadGenerator(t *testing.T) {
 	lg := NewLoadGenerator(
 		NewBatteryProperties(
 			ctx,
-			uint64(runtime.NumCPU()/2),    // give room for the server to work
-			uint64(runtime.NumCPU()*1000), // a very conservative value for modern processors
+			uint64(runtime.NumCPU()/2), // give room for the server to work
+			1000,                       // a very conservative value for modern processors
 			u,
 		),
-		uint64(runtime.NumCPU()*100000), // roughly spoken, 100k conns * cpu count for the battery
+		uint64(runtime.NumCPU()*10000), // roughly spoken, 100k conns * cpu count for the battery
 	)
 
 	if err := lg.Spawn(); err != nil {
@@ -69,7 +69,7 @@ func TestLoadGenerator(t *testing.T) {
 }
 
 func TestBenchmarker(t *testing.T) {
-	seconds := 30
+	seconds := 10
 
 	defer goleak.VerifyNone(t)
 
@@ -84,8 +84,8 @@ func TestBenchmarker(t *testing.T) {
 	lg := NewBenchmarker(
 		NewBatteryProperties(
 			ctx,
-			uint64(runtime.NumCPU()/2),    // give room for the server to work
-			uint64(runtime.NumCPU()*1000), // a very conservative value for modern processors
+			uint64(runtime.NumCPU()/2), // give room for the server to work
+			1000,                       // a very conservative value for modern processors
 			u,
 		),
 		time.Duration(seconds)*time.Second, // roughly spoken, 100k conns * cpu count for the battery

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -24,23 +23,22 @@ type Requester interface {
 // Stats emcompasses the statistics for the requests already made.
 type Stats struct {
 	// Count of successes up to this point.
-	successes atomic.Uint64
+	successes uint64
 	// Count of failures up to this point.
-	failures atomic.Uint64
+	failures uint64
 }
 
 func (s *Stats) Successes() uint64 {
-	return s.successes.Load()
+	return s.successes
 }
 
 func (s *Stats) Failures() uint64 {
-	return s.failures.Load()
+	return s.failures
 }
 
 // BatteryProperties are the list of properties common to each load generator.
 type BatteryProperties struct {
-	connCount atomic.Uint64
-	connTotal atomic.Uint64
+	connTotal uint64
 
 	// Concurrency is the number of concurrent request processors to make at a
 	// time.
@@ -73,9 +71,9 @@ func NewBatteryProperties(ctx context.Context, concurrency, simultaneousConnecti
 			Timeout: 0,
 			Transport: &http.Transport{
 				IdleConnTimeout:     0,
-				MaxConnsPerHost:     int(simultaneousConnections),
-				MaxIdleConns:        int(simultaneousConnections),
-				MaxIdleConnsPerHost: int(simultaneousConnections),
+				MaxConnsPerHost:     0,
+				MaxIdleConns:        0,
+				MaxIdleConnsPerHost: 0,
 			},
 		},
 	}
@@ -130,15 +128,29 @@ func NewLoadGenerator(properties *BatteryProperties, total uint64) *LoadGenerato
 //
 // To cancel load generation, cancel a passed context.
 func (lg *LoadGenerator) Spawn() error {
-	return lg.Properties.spawn(func(total uint64) bool { return lg.TotalConnections <= total })
+	return lg.Properties.spawn(func(total uint64) bool { return lg.TotalConnections/lg.Properties.concurrency <= total })
 }
 
 func (p *BatteryProperties) spawn(cancelFunc func(uint64) bool) error {
 	wg := &sync.WaitGroup{}
 	wg.Add(int(p.concurrency))
+	totals := make(chan uint64, p.concurrency)
+	successes := make(chan uint64, p.concurrency)
+	failures := make(chan uint64, p.concurrency)
 
 	for i := uint64(0); i < p.concurrency; i++ {
-		go makeRequests(wg, p, cancelFunc)
+		go makeRequests(wg, p, totals, successes, failures, cancelFunc)
+	}
+
+	for i := uint64(0); i < p.concurrency*3; i++ {
+		select {
+		case total := <-totals:
+			p.connTotal += total
+		case success := <-successes:
+			p.stats.successes += success
+		case failure := <-failures:
+			p.stats.failures += failure
+		}
 	}
 
 	wg.Wait()
@@ -146,9 +158,18 @@ func (p *BatteryProperties) spawn(cancelFunc func(uint64) bool) error {
 }
 
 // this function performs the actual request delivery. it is run in multiple goroutines.
-func makeRequests(wg *sync.WaitGroup, properties *BatteryProperties, cancelFunc func(uint64) bool) {
+func makeRequests(wg *sync.WaitGroup, properties *BatteryProperties, totals, successes, failures chan uint64, cancelFunc func(uint64) bool) {
+	defer wg.Done()
+
+	connCount := uint64(0)
+	connTotal := uint64(0)
+	successCount := uint64(0)
+	failureCount := uint64(0)
+
 	defer func() {
-		wg.Done()
+		totals <- connTotal
+		failures <- failureCount
+		successes <- successCount
 	}()
 
 	for {
@@ -158,30 +179,28 @@ func makeRequests(wg *sync.WaitGroup, properties *BatteryProperties, cancelFunc 
 		default:
 		}
 
-		if properties.simultaneousConnections <= properties.connCount.Load() {
-			time.Sleep(10 * time.Millisecond) // make this tweakable
+		if properties.simultaneousConnections <= connCount {
 			continue
 		}
 
-		if cancelFunc(properties.connTotal.Load()) {
+		if cancelFunc(connTotal) {
 			return
 		}
 
-		val := properties.connCount.Add(1)
-		properties.connTotal.Add(1)
+		connCount += 1
+		connTotal += 1
 
 		err := properties.Deliver(properties.url)
 
-		for !properties.connCount.CompareAndSwap(val, val-1) {
-			val = properties.connCount.Load()
-		}
+		connCount -= 1
 
 		if err != nil {
-			properties.stats.failures.Add(1)
+			failureCount += 1
 		} else {
-			properties.stats.successes.Add(1)
+			successCount += 1
 		}
 	}
+
 }
 
 // Deliver satisfies the Requester interface and encompasses basic delivery of
